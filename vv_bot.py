@@ -2,6 +2,7 @@
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.common.exceptions import NoSuchElementException
 import requests
 import re
 from datetime import datetime
@@ -25,19 +26,37 @@ def login(driver, username, password):
         driver.save_screenshot("pre.png")
         time.sleep(2)
         driver.find_element_by_name('login').send_keys(username)
+        login_button = driver.find_element_by_class_name("btn-login-submit")
+        login_button.click()
+        time.sleep(2)
         driver.find_element_by_name('password').send_keys(password)
         driver.find_element_by_name('password').send_keys(Keys.RETURN)
         time.sleep(2)
+        try:
+          my_acc = driver.find_element_by_xpath("//*[@id='jsMenuItem']")
+          if my_acc.get_attribute("data-href") != "/myauctions/wonauctions.html":
+              raise NoSuchElementException()
+        except NoSuchElementException:
+            print('Logged failed')
+            driver.save_screenshot("login_failed.png")
+
+            exit()
+            return False
         print('Logged in successfully')
         return True
+    
+        
 
 
 def countdown(url_auction, offset_seconds):
     # get the expiring time using requests
     # because the element is hidden and changes name dynamically
     r = requests.get(url_auction)
-    dt = re.search(r"tsExpires\">(.........................)<", r.text)
-    expires = str(dt.group(1))
+    dt = re.search(r"tsExpires\":\"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?", r.text)
+    
+    expires = str(dt.group(0))
+    expires = expires.replace('"', "").replace('tsExpires:', "")
+    print(expires)
     exp = datetime.strptime(''.join(expires.rsplit(':', 1)), '%Y-%m-%dT%H:%M:%S%z').replace(tzinfo=None)
     print('Auction deadline: {}'.format(exp))
     now = datetime.now()
@@ -65,13 +84,13 @@ def main():
 
     options, arguments = p.parse_args()
 
-    if options.url_auction is '':
+    if options.url_auction == '':
         p.error('Auction URL not given')
 
-    if (options.username is '') or (options.password is ''):
+    if (options.username == '') or (options.password == ''):
         p.error('Username and/or password not given')
 
-    if options.max_price is '':
+    if options.max_price == '':
         p.error('Maximum price not given')
 
     # parse options
@@ -96,17 +115,17 @@ def main():
     # go to auction page
     driver.get(url_auction)
     time.sleep(2)
-
+    driver.save_screenshot("try_bid.png")
     # get all static html elements before countdown
-    bid_input_elem = driver.find_element_by_xpath("//*[@class='bid-input']")
-    bid_button_elem = driver.find_element_by_xpath("//*[@class='btn btn-orange']")
+    bid_input_elem = driver.find_element_by_xpath("//*[@id='jsActiveBidInput']")
+    bid_button_elem = driver.find_element_by_xpath("//*[@id='jsActiveBidButton']")
 
     # countdown until 0.75 seconds before the deadline
     # setting depends on bandwidth
     countdown(url_auction, offset_seconds)
 
     # get highest bid
-    bid_elem = driver.find_element_by_xpath("//*[@class='jsBidAmountUpdate highest-bid']")
+    bid_elem = driver.find_element_by_xpath("//*[@id='jsMainLotCurrentBid']")
     bid = int(bid_elem.text)
     print("highest bid: {}".format(bid))
 
@@ -118,6 +137,9 @@ def main():
         time.sleep(1)
         driver.save_screenshot("your_bid.png")
 
+ 
+           
+    
 
 if __name__ == '__main__':
     main()
